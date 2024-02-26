@@ -8,6 +8,7 @@
     - Installation and configuration of Pgweb for easy database browsing.
     - Setup of Prometheus for collecting database metrics.
     - Integration with Grafana for visualizing PostgreSQL performance metrics.
+    - test database and data for  debugging
 
 ## Getting Started
 
