@@ -1,0 +1,90 @@
+---
+- hosts: localhost
+  become: yes
+  vars:
+    DB_PASSWORD: pgweb 
+  tasks:
+    - name: Modify /etc/hosts
+      pause:
+        prompt: "Do you want to modify /etc/hosts? (yes/no) It's needed for nginx"
+      register: user_input
+
+    - name: Modifying /etc/hosts
+      lineinfile:
+        path: /etc/hosts
+        line: "127.0.0.1    pg.taraabar.net"
+      when: user_input.user_input | lower == "yes"
+
+    - name: Start Docker Compose
+      command: docker-compose up -d
+      args:
+        chdir: "{{ playbook_dir }}"
+ 
+    - name: Wait for PostgreSQL container to be running
+      wait_for:
+        host: localhost
+        port: 8000
+        timeout: 30
+      retries: 5
+      delay: 5
+
+    - name: Create a new database with name "Task"
+      community.postgresql.postgresql_db:
+        name: task
+        login_host: "127.0.0.1"
+        port: "8000"
+        login_user: "pgweb"
+        login_password: "pgweb"
+        state: present
+
+    - name: Creat a new schema with name "test"
+      community.postgresql.postgresql_schema:
+        name: test
+        login_host: "127.0.0.1"
+        port: "8000"
+        login_user: "pgweb"
+        login_password: "pgweb"
+        database: task
+        state: present
+
+    - name: Populate database
+      command: psql -h 127.0.0.1 -p 8000  -U pgweb -d task -f populate.sql
+      environment:
+         PGPASSWORD: pgweb
+         
+    - name: Update branch column
+      postgresql_query:
+        login_host: "127.0.0.1"
+        port: "8000"
+        db: task
+        autocommit: yes
+        login_user: pgweb
+        login_password: pgweb
+        query: UPDATE test.test_project  SET branch = INITCAP(TRIM(BOTH ' ' FROM branch))
+
+    - name: Update project column
+      postgresql_query:
+        login_host: "127.0.0.1"
+        port: "8000"
+        db: task
+        autocommit: yes
+        login_user: pgweb
+        login_password: pgweb
+        query: UPDATE test.test_project  SET project_name = INITCAP(TRIM(BOTH ' ' FROM project_name))
+
+    - name: Create table in schema test
+      postgresql_query:
+        login_host: "127.0.0.1"
+        port: "8000"
+        db: task
+        autocommit: yes
+        login_user: pgweb
+        login_password: pgweb
+        query: >
+          CREATE TABLE IF NOT EXISTS test.project_statistics (
+            project_name varchar PRIMARY KEY,
+            oldest_date timestamp,
+            newest_date timestamp,
+            largest_version integer,
+            project_count integer
+          );

@@ -1,0 +1,98 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: bitnami/postgresql
+    container_name: postgres
+    environment:
+      POSTGRESQL_DATABASE: Task
+      POSTGRES_DB: pgweb
+      POSTGRES_PASSWORD: pgweb
+      POSTGRES_USER: pgweb
+    healthcheck:
+      test: pg_isready -U pgweb -h 127.0.0.1
+      interval: 5s
+    networks:
+      - pgweb
+    ports:
+      - "8000:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    volumes:
+      - "./prometheus.yml:/etc/prometheus/prometheus.yml"
+    networks:
+      - pgweb
+    ports:
+      - 9090:9090
+
+  node_exporter:
+   image: prom/node-exporter
+   networks:
+     - pgweb
+   ports:
+     - 9100:9100 
+
+  pgweb:
+    image: sosedoff/pgweb:latest
+    build: .
+    container_name: pgweb
+    ports:
+      - "8001:8081"
+    networks:
+      - pgweb
+    environment:
+      PGWEB_DATABASE_URL: postgres://pgweb:pgweb@postgres:5432/Task?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "nc", "-vz", "127.0.0.1", "8081"]
+      interval: 5s
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter
+    environment:
+      - DATA_SOURCE_NAME=postgresql://pgweb:pgweb@postgres:5432/Task?sslmode=disable
+    networks:
+      - pgweb
+    ports:
+      - "9187:9187"
+
+  
+  nginx:
+    image: bitnami/nginx
+    container_name: nginx_container
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - nginx_logs:/var/log/nginx
+      - ./nginx.conf:/opt/bitnami/nginx/conf/server_blocks/my_server_block.conf:ro
+      - ./certs:/certs:ro
+    depends_on:
+      - pgweb
+    networks:
+      - pgweb
+
+  grafana:
+    image: bitnami/grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    networks:
+      - pgweb 
+    volumes:
+      - ./dashboards:/opt/bitnami/grafana/conf/provisioning/dashboards
+
+networks:
+  pgweb:
+    name: pgweb
+
+volumes:
+  postgres_data:
+  nginx_logs:
